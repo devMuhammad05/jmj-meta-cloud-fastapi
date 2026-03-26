@@ -19,12 +19,12 @@ router = APIRouter(
 # ------------------------
 # Save credentials to DB
 # ------------------------
-def save_to_db(db: Session, data: dict, account_info: dict):
+def save_to_db(db: Session, data: dict, account_info: dict, account_id: str):
     try:
         query = text("""
         INSERT INTO meta_trader_credentials
-        (user_id, mt_account_number, mt_password, mt_server, platform_type, initial_deposit, risk_level, created_at, updated_at)
-        VALUES (:user_id, :login, :password, :server, :platform, :balance, :risk_level, NOW(), NOW())
+        (user_id, mt_account_number, mt_password, mt_server, platform_type, initial_deposit, risk_level, account_id, created_at, updated_at)
+        VALUES (:user_id, :login, :password, :server, :platform, :balance, :risk_level, :account_id, NOW(), NOW())
         RETURNING id
         """)
 
@@ -37,9 +37,26 @@ def save_to_db(db: Session, data: dict, account_info: dict):
                 "server": data['server'],
                 "platform": data.get('platform', 'mt5'),
                 "balance": account_info.get('balance', 0.0),
-                "risk_level": "medium",
+                "risk_level": data['risk_level'],
+                "account_id": account_id,
             }
         )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
+# ------------------------
+# Save initial metric record (only balance on first insert)
+# ------------------------
+def save_metric_to_db(db: Session, account_id: str, balance: float):
+    try:
+        query = text("""
+        INSERT INTO meta_account_metrics (account_id, balance, created_at, updated_at)
+        VALUES (:account_id, :balance, NOW(), NOW())
+        """)
+        db.execute(query, {"account_id": account_id, "balance": balance})
         db.commit()
     except Exception as e:
         db.rollback()
@@ -79,6 +96,7 @@ async def provision_account(payload: MT5Credentials, db: Session):
                 "platform": payload.platform,
                 "magic": payload.magic,
                 "application": "MetaApi",
+                "metastatsApiEnabled": payload.metastats_enabled,
             }
             account = await api.metatrader_account_api.create_account(account_data)
             print(f"Account registered! MetaApi ID: {account.id}")
@@ -96,7 +114,8 @@ async def provision_account(payload: MT5Credentials, db: Session):
         print(f"Connected! Balance: {info['balance']} {info['currency']}")
 
         # Save to DB
-        save_to_db(db, payload.dict(), info)
+        save_to_db(db, payload.dict(), info, account.id)
+        save_metric_to_db(db, account.id, info.get("balance", 0.0))
 
         return {
             "message": "Account provisioned successfully",
@@ -107,9 +126,10 @@ async def provision_account(payload: MT5Credentials, db: Session):
         }
 
     except Exception as e:
+        detail = {"message": str(e)}
         if hasattr(e, "details"):
-            print("MetaApi validation details:", e.details)
-        raise HTTPException(status_code=400, detail=str(e))
+            detail["details"] = e.details
+        raise HTTPException(status_code=400, detail=detail)
     finally:
         if connection:
             try:

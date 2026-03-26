@@ -9,6 +9,8 @@ class MT5Credentials(BaseModel):
     server: str
     platform: str = "mt5"
     magic: int = 0
+    risk_level: str
+    metastats_enabled: bool = True
 
     @field_validator("login")
     @classmethod
