@@ -142,8 +142,38 @@ async def provision_account(payload: MT5Credentials, db: Session):
 
 
 # ------------------------
-# Endpoint
+# Endpoints
 # ------------------------
+@router.get("/api/meta/accounts")
+async def list_meta_accounts():
+    token = os.getenv("META_API_TOKEN")
+    if not token:
+        raise HTTPException(status_code=500, detail="MetaApi token not set in environment")
+
+    api = MetaApi(token)
+    try:
+        accounts = await api.metatrader_account_api.get_accounts_with_infinite_scroll_pagination()
+        return {
+            "count": len(accounts),
+            "accounts": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "login": a.login,
+                    "server": a.server,
+                    "platform": a.platform,
+                    "state": a.state,
+                    "connection_status": a.connection_status,
+                }
+                for a in accounts
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        api.close()
+
+
 @router.post("/api/provision-account")
 async def register_mt5(payload: MT5Credentials, db: Session = Depends(get_db)):
     return await provision_account(payload, db)
