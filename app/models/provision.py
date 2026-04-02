@@ -11,6 +11,7 @@ class MT5Credentials(BaseModel):
     magic: int = 0
     risk_level: str
     metastats_enabled: bool = True
+    pool_id: str | None = None
 
     @field_validator("login")
     @classmethod
