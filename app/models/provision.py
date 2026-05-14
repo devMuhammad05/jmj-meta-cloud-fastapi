@@ -19,3 +19,8 @@ class MT5Credentials(BaseModel):
         if not v.isdigit():
             raise ValueError("login should consist of digits only")
         return v
+
+
+class ProvisionRequest(BaseModel):
+    user_id: int
+    meta_trader_credential_id: int
